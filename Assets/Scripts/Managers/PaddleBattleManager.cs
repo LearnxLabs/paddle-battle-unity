@@ -2,16 +2,14 @@ using System;
 using System.Collections;
 using UnityEngine;
 using Mirror;
-using TMPro;
 using System.Collections.Generic;
 using UnityEngine.SceneManagement;
-using System.ComponentModel;
 using Mirror.Examples.MultipleAdditiveScenes;
 
 public enum PlayerType
 {
-    PLAYER,
-    SPECTATOR
+    SPECTATOR,
+    PLAYER
 }
 
 public enum GameStatus
@@ -27,6 +25,7 @@ public class Match
     public string id;
     public GameStatus status;
     public List<Player> players;
+    public List<Player> spectators;
     public Ball ball;
     // public List<Spectator>() Spectators;
 
@@ -35,6 +34,7 @@ public class Match
         this.id = id;
         this.status = GameStatus.WAITING_FOR_PLAYERS;
         this.players = new List<Player>();
+        this.spectators = new List<Player>();
     }
 
     public Match() { }
@@ -42,22 +42,19 @@ public class Match
     public void StartMatch()
     {
         status = GameStatus.PLAYING;
-        GetPlayers().ForEach(p => p.StartCountdown());
+        players.ForEach(p => p.StartCountdown());
+        spectators.ForEach(s => s.StartCountdown());
     }
 
     public void FinishMatch(Player player)
     {
-        players.ForEach(p =>
-        {
-            p.ShowWinnerUI(player.nickname, player.topiaId);
-        });
         status = GameStatus.FINISHED;
     }
 
     public void AddPlayerToMatch(Player player)
     {
         players.Add(player);
-        if (players.FindAll(x => x.type == PlayerType.PLAYER).Count == 2)
+        if (players.Count == 2)
         {
             PaddleBattleManager.Instance.StartMatch(this);
         }
@@ -68,11 +65,10 @@ public class Match
         Debug.Log("Removing player from Match: " + player.nickname);
         players.Remove(player);
         Debug.Log("Players in match: " + players.FindAll(x => x.type == PlayerType.PLAYER).Count);
-        Debug.Log("Spectators in match: " + players.FindAll(x => x.type == PlayerType.SPECTATOR).Count);
 
         if (player.type == PlayerType.SPECTATOR) return;
 
-        if (status == GameStatus.PLAYING && player.type == PlayerType.PLAYER && GetPlayers().Count > 0)
+        if ((status == GameStatus.PLAYING || status == GameStatus.READY_TO_START)  && player.type == PlayerType.PLAYER && GetPlayers().Count > 0)
         {
             Player remainingPlayer = players.Find(x => x.type == PlayerType.PLAYER);
             if (remainingPlayer)
@@ -82,14 +78,20 @@ public class Match
         }
     }
 
+    public void AddSpectatorToMatch(Player spectator)
+    {
+        spectators.Add(spectator);
+    }
+
+    public void RemoveSpectatorFromMatch(Player spectator)
+    {
+        spectators.Remove(spectator);
+        Debug.Log("Spectators in match: " + spectators.FindAll(x => x.type == PlayerType.SPECTATOR).Count);
+    }
+
     public List<Player> GetPlayers()
     {
         return players.FindAll(p => p.type == PlayerType.PLAYER);
-    }
-
-    public List<Player> GetSpectators()
-    {
-        return players.FindAll(p => p.type == PlayerType.SPECTATOR);
     }
 }
 
@@ -193,11 +195,11 @@ public class PaddleBattleManager : NetworkBehaviour
         }
     }
 
-    public void ShowWinnerUI(Player player)
+    public void ShowWinnerUI(Player winner)
     {
-        GameObject.Find("GameUI").GetComponent<GameUI>().ShowWinnerUI(player.nickname);
-        Match match = matches.Find(x => x.id == player.matchId);
-        match.players.ForEach(player => player.ShowWinnerUI(player.nickname, player.topiaId));
+        Match match = matches.Find(x => x.id == winner.matchId);
+        match.players.ForEach(p => p.ShowWinnerUI(winner.nickname, winner.topiaId));
+        match.spectators.ForEach(s => s.ShowWinnerUI(winner.nickname, winner.topiaId));
     }
 
     [Server]
@@ -219,12 +221,40 @@ public class PaddleBattleManager : NetworkBehaviour
     }
 
     [Server]
+    public void AddSpectator(Player spectator)
+    {
+        Match match = matches.Find(x => x.id == spectator.matchId);
+        if (match != null)
+        {
+            match.AddSpectatorToMatch(spectator);
+            Debug.Log("Adding spectator to existing match");
+        }
+        else
+        {
+            Match newMatch = new Match(spectator.matchId);
+            newMatch.AddSpectatorToMatch(spectator);
+            matches.Add(newMatch);
+            Debug.Log("Creating new match and adding spectator to it");
+        }
+    }
+
+    [Server]
     public void RemovePlayer(Player player)
     {
         Match match = matches.Find(x => x.id == player.matchId);
         if (match != null)
         {
             match.RemovePlayerFromMatch(player);
+        }
+    }
+
+    [Server]
+    public void RemoveSpectator(Player spectator)
+    {
+        Match match = matches.Find(x => x.id == spectator.matchId);
+        if (match != null)
+        {
+            match.RemoveSpectatorFromMatch(spectator);
         }
     }
 
@@ -269,5 +299,31 @@ public class PaddleBattleManager : NetworkBehaviour
             return matches.Find(x => x.id == matchId).players.Count;
         }
         else return 0;
+    }
+
+    [Server]
+    public void PlayerNameChanged(int index, string nickname, string matchId)
+    {
+        Match match = matches.Find(x => x.id == matchId);
+        if (match != null)
+        {
+            match.spectators.ForEach(s => s.UpdateSpectatorUINickname(index, nickname));
+        }
+    }
+
+    [Server]
+    public void PlayerScoreChanged(int index, int score, string matchId)
+    {
+        Match match = matches.Find(x => x.id == matchId);
+        if (match != null)
+        {
+            match.spectators.ForEach(s => s.UpdateSpectatorUIScore(index, score));
+        }
+    }
+
+    [Command]
+    public void CmdLogInServer(string msg)
+    {
+        Debug.Log(msg);
     }
 }

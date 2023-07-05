@@ -1,12 +1,11 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using Mirror;
 using TMPro;
 using UnityEngine.SceneManagement;
-using System;
 using UnityEngine.UI;
 using Mirror.Examples.MultipleAdditiveScenes;
+using System.Runtime.InteropServices;
 
 public class Player : NetworkBehaviour
 {
@@ -18,6 +17,8 @@ public class Player : NetworkBehaviour
     [SerializeField] private GameObject nicknameCanvas;
     [SerializeField] private GameObject scoreCanvas;
     [SerializeField] private GameObject winnerCanvas;
+    [SerializeField] private GameObject UI;
+    [SerializeField] private GameObject PointZones;
     [SerializeField] private GameObject countdownCanvas;
     [SerializeField] private TextMeshProUGUI nicknameText;
     [SerializeField] private TextMeshProUGUI scoreText;
@@ -53,10 +54,16 @@ public class Player : NetworkBehaviour
 
     private GameUI GameUI;
 
+    [DllImport("__Internal")]
+    private static extern void GameOver(string winner);
+
     public void Awake()
     {
         LocalInstance = this;
         GameObject.Find("LobbyUI").GetComponent<LobbyUI>().HideButtons();
+        GameObject.Find("GameUI").GetComponent<GameUI>().menuButton.onClick.AddListener(() => {
+            StartCoroutine(Disconnect(0));
+        });
     }
 
     public override void OnStartClient()
@@ -64,21 +71,28 @@ public class Player : NetworkBehaviour
         if (type == PlayerType.PLAYER)
         {
             paddle.SetActive(true);
-        }
-        if (!isLocalPlayer) return;
-        CmdCreateOrJoinMatch(Topia.Instance.WorldName);
-        CmdSetUpPlayer(Topia.Instance.PlayerNickname, Topia.Instance.PlayerType, Topia.Instance.WorldName, Topia.Instance.PlayerId, netId);
 
-        if (Topia.Instance.PlayerType != PlayerType.SPECTATOR)
-        {
-            paddle.SetActive(true);
+            GameObject.Find("GameUI").GetComponent<GameUI>().SetPlayerName(index, nickname);
+            GameObject.Find("GameUI").GetComponent<GameUI>().SetScore(index, score);
+
             if (isLocalPlayer)
             {
-                countdownCanvas.SetActive(true);
-                cam.enabled = true;
-                scoreText.enabled = true;
+                GameObject.Find("GameUI").SetActive(false);
             }
         }
+
+        if (type == PlayerType.SPECTATOR)
+        {
+            paddle.SetActive(false);
+            paddle.GetComponent<BoxCollider>().enabled = false;
+            cam.enabled = false;
+            UI.SetActive(false);
+            PointZones.SetActive(false);
+        }
+
+        if (!isLocalPlayer) return;
+        CmdCreateOrJoinMatch(Topia.Instance.WorldName);
+        CmdSetUpPlayer(Topia.Instance.PlayerNickname, Topia.Instance.PlayerType, Topia.Instance.WorldName, Topia.Instance.VisitorId, netId);
 
         GetComponent<AudioSource>().Play();
         menuButton.onClick.AddListener(() => {
@@ -89,19 +103,20 @@ public class Player : NetworkBehaviour
     public override void OnStopServer()
     {
         base.OnStopServer();
-        PaddleBattleManager.Instance.RemovePlayer(this);
+        if (type == PlayerType.PLAYER)
+        {
+            PaddleBattleManager.Instance.RemovePlayer(this);
+        }
+        else
+        {
+            PaddleBattleManager.Instance.RemoveSpectator(this);
+        }
     }
 
     private void Update()
     {
         if (!isLocalPlayer || type != PlayerType.PLAYER) return;
         UpdatePaddle();
-
-        if (Input.GetKeyDown(KeyCode.X))
-        {
-            CmdLogInServer("Local: " + connectionId.ToString());
-            CmdLogInServer("Server: " + connectionToServer.connectionId.ToString());
-        }
     }
 
     private void UpdatePaddle()
@@ -116,25 +131,45 @@ public class Player : NetworkBehaviour
     [ClientRpc]
     public void ShowWinnerUI(string _nickname, string _topiaId)
     {
-        CmdLogInServer("Showing Winner UI");
         if (!isLocalPlayer) return;
+        Debug.Log(nickname + " # " + _nickname);
         if (nickname == _nickname && topiaId == _topiaId)
         {
             winnerText.text = "You won!";
+            Debug.Log(_nickname);
         }
         else
         {
             winnerText.text = $"{_nickname} won!";
         }
-        winnerCanvas.GetComponent<Animator>().Play("PlayerWinnerUI");
-        Disconnect(5);
+
+#if UNITY_WEBGL == true && UNITY_EDITOR == false
+        GameOver(_nickname);
+#endif
+
+        if (type == PlayerType.PLAYER)
+        {
+            winnerCanvas.GetComponent<Animator>().Play("PlayerWinnerUI");
+        }
+        else
+        {
+            GameObject.Find("GameUI").GetComponent<GameUI>().ShowWinnerUI(_nickname);
+        }
     }
 
     [ClientRpc]
     public void StartCountdown()
     {
         if (!isLocalPlayer) return;
-        countdownCanvas.GetComponent<Animator>().Play("PlayerCountdown");
+        if (type == PlayerType.PLAYER)
+        {
+            countdownCanvas.SetActive(true);
+            countdownCanvas.GetComponent<Animator>().Play("PlayerCountdown");
+        }
+        else
+        {
+            GameObject.Find("GameUI").GetComponent<GameUI>().CountDown();
+        }
     }
 
     [Command]
@@ -150,25 +185,12 @@ public class Player : NetworkBehaviour
         matchId = _matchId;
         topiaId = _topiaId;
         connectionId = _connectionId;
-        index = PaddleBattleManager.Instance.GetPlayerCount(_matchId);
-        type = _type;
+        type = PaddleBattleManager.Instance.GetPlayerCount(_matchId) == 2 ? PlayerType.SPECTATOR : _type;
+        index = type == PlayerType.SPECTATOR ? 3 : PaddleBattleManager.Instance.GetPlayerCount(_matchId);
 
-        if (_type == PlayerType.PLAYER)
-        {
-            paddle.SetActive(true);
-            if (index > 1)
-            {
-                type = PlayerType.SPECTATOR;
-                cam.enabled = false;
-                paddle.SetActive(false);
-            }
-        }
+        cam.enabled = false;
 
-        if (_type == PlayerType.SPECTATOR)
-        {
-            cam.enabled = false;
-            paddle.SetActive(false);
-        }
+        RpcConfigurePlayer(type);
 
         Debug.Log(
             " --- Setting New Player ---" + "\n" +
@@ -179,13 +201,71 @@ public class Player : NetworkBehaviour
             $"ConnectionID: {connectionId}"
         );
 
-        PaddleBattleManager.Instance.AddPlayer(this);
+        if (type == PlayerType.PLAYER)
+        {
+            paddle.SetActive(true);
+
+            PaddleBattleManager.Instance.AddPlayer(this);
+            PaddleBattleManager.Instance.PlayerNameChanged(index, nickname, matchId);
+        }
+        else
+        {
+            paddle.SetActive(false);
+            paddle.GetComponent<BoxCollider>().enabled = false;
+            UI.SetActive(false);
+            PointZones.SetActive(false);
+
+            PaddleBattleManager.Instance.AddSpectator(this);
+        }
+    }
+
+    [ClientRpc]
+    public void RpcConfigurePlayer(PlayerType _type)
+    {
+        if (_type == PlayerType.PLAYER)
+        {
+            paddle.SetActive(true);
+            if (isLocalPlayer)
+            {
+                cam.enabled = true;
+                countdownCanvas.SetActive(true);
+                scoreText.enabled = true;
+                UI.SetActive(true);
+                PointZones.SetActive(true);
+            }
+        }
+        else
+        {
+            paddle.SetActive(false);
+            paddle.GetComponent<BoxCollider>().enabled = false;
+            cam.enabled = false;
+            UI.SetActive(false);
+            PointZones.SetActive(false);
+            CmdLogInServer("Reseting Spectator UI");
+            GameObject.Find("GameUI").GetComponent<GameUI>().ResetUI();
+            GameObject.Find("GameUI").GetComponent<GameUI>().menuButton.onClick.AddListener(() => {
+                StartCoroutine(Disconnect(0));
+            });
+        }
     }
 
     [Command]
     public void CmdRemovePlayer()
     {
-        PaddleBattleManager.Instance.RemovePlayer(this);
+        if (type == PlayerType.PLAYER)
+        {
+            PaddleBattleManager.Instance.RemovePlayer(this);
+        }
+        else
+        {
+            PaddleBattleManager.Instance.RemoveSpectator(this);
+        }
+    }
+
+    [Command]
+    public void CmdSetPlayerType(PlayerType _type)
+    {
+        type = _type;
     }
 
     [Server]
@@ -193,14 +273,13 @@ public class Player : NetworkBehaviour
     {
         Debug.Log($"Point added to {nickname}");
         score++;
+        PaddleBattleManager.Instance.PlayerScoreChanged(index, score, matchId);
     }
 
     void OnNicknameChanged(string oldNickname, string newNickname)
     {
         Debug.Log("Nickname: " + newNickname);
         nicknameText.text = newNickname + "\n" + score;
-        GameUI = GameObject.Find("GameUI").GetComponent<GameUI>();
-        GameUI.SetPlayerName(index, nickname);
     }
 
     void OnWorldNameChanged(string _old, string _new)
@@ -208,32 +287,14 @@ public class Player : NetworkBehaviour
         Debug.Log("Worldname: " + _new);
     }
 
-    void OnTypeChanged(PlayerType _oldType, PlayerType _newType)
-    {
-        Debug.Log("Worldname: " + _newType);
-        if (_newType == PlayerType.SPECTATOR)
-        {
-            cam.enabled = false;
-            paddle.SetActive(false);
-
-        }
-    }
-
     void OnScoreChanged(int oldScore, int newScore)
     {
-        Debug.Log("Score: " + newScore);
-        string[] array = new string[newScore];
-        Array.Fill(array, ".");
-        // scoreText.text = String.Join("", array);
         scoreText.text = "" + newScore;
         nicknameText.text = nickname + "\n" + score;
-        GameUI.SetScore(index, newScore);
     }
 
     void OnIndexChanged(int oldIndex, int newIndex)
     {
-        Debug.Log("Player Index: " + newIndex);
-        CmdLogInServer("Player Index: " + newIndex);
         if (newIndex == 1)
         {
             transform.rotation = Quaternion.Euler(0, 180, 0);
@@ -257,9 +318,27 @@ public class Player : NetworkBehaviour
     public IEnumerator Disconnect(int delay)
     {
         CmdRemovePlayer();
-        yield return new WaitForSeconds(delay);
         GameObject.Find("LobbyUI").GetComponent<LobbyUI>().ShowButtons();
+        yield return new WaitForSeconds(delay);
         CmdLogInServer("Disconnecting player " + nickname);
         NetworkClient.Disconnect();
+    }
+
+    // REGION Spectator specific methods
+
+    [ClientRpc]
+    public void UpdateSpectatorUINickname(int _index, string _nickname)
+    {
+        if (!isLocalPlayer) return;
+        CmdLogInServer("Setting player NICKNAME in Spectator UI");
+        GameObject.Find("GameUI").GetComponent<GameUI>().SetPlayerName(_index, _nickname);
+    }
+
+    [ClientRpc]
+    public void UpdateSpectatorUIScore(int _index, int _score)
+    {
+        if (!isLocalPlayer) return;
+        CmdLogInServer("Setting player SCORE in Spectator UI");
+        GameObject.Find("GameUI").GetComponent<GameUI>().SetScore(_index, _score);
     }
 }

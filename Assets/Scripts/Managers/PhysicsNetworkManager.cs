@@ -124,12 +124,15 @@ namespace Mirror.Examples.MultipleAdditiveScenes
         // When a match is over unload the match scene
         public IEnumerator ServerUnloadSubScene(string matchId)
         {
-            Scene matchScene = matchScenes[matchId];
-            if (matchScene.IsValid())
-            yield return SceneManager.UnloadSceneAsync(matchScene);
+            if (matchScenes[matchId] != null)
+            {
+                Scene matchScene = matchScenes[matchId];
+                if (matchScene.IsValid())
+                    yield return SceneManager.UnloadSceneAsync(matchScene);
 
-            matchScenes.Remove(matchId);
-            yield return Resources.UnloadUnusedAssets();
+                matchScenes.Remove(matchId);
+                yield return Resources.UnloadUnusedAssets();
+            }
         }
 
         /// <summary>

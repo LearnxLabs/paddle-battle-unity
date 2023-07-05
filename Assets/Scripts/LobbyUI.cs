@@ -27,13 +27,14 @@ public class LobbyUI : MonoBehaviour
         {
             Topia.Instance.SetPlayerType(PlayerType.SPECTATOR);
             NetworkManager.singleton.StartClient();
+            
         });
     }
 
     public void HideButtons()
     {
         PlayButton.gameObject.SetActive(false);
-        //SpectateButton.gameObject.SetActive(false);
+        SpectateButton.gameObject.SetActive(false);
         LobbyAnimations.SetActive(false);
         GameUI.SetActive(true);
     }
@@ -41,7 +42,7 @@ public class LobbyUI : MonoBehaviour
     public void ShowButtons()
     {
         PlayButton.gameObject.SetActive(true);
-        //SpectateButton.gameObject.SetActive(true);
+        SpectateButton.gameObject.SetActive(true);
         LobbyAnimations.SetActive(true);
         GameUI.SetActive(false);
     }

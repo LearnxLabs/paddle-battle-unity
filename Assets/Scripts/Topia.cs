@@ -7,7 +7,8 @@ public class Topia : MonoBehaviour
 
     public string WorldName { get; set; } = "Topia";
     public string PlayerNickname { get; set; } = "Topi";
-    public string PlayerId { get; set; } = "1";
+    public string VisitorId { get; set; } = "1";
+
     public PlayerType PlayerType { get; set; }
     public bool OnPrivateZone { get; set; } = false;
 
@@ -26,9 +27,9 @@ public class Topia : MonoBehaviour
         PlayerNickname = nickname;
     }
 
-    public void SetPlayerId(string id)
+    public void SetVisitorId(string id)
     {
-        PlayerId = id;
+        VisitorId = id;
     } 
 
     public void SetWorldName(string matchId)
@@ -40,10 +41,5 @@ public class Topia : MonoBehaviour
     public void SetPlayerType(PlayerType playerType)
     {
         PlayerType = playerType;
-    }
-
-    public void SetOnPrivateZone(bool onPrivateZone)
-    {
-        OnPrivateZone = onPrivateZone;
     }
 }

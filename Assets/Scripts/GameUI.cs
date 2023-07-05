@@ -1,7 +1,7 @@
-using System.Collections;
-using System.Collections.Generic;
+
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class GameUI : MonoBehaviour
 {
@@ -11,16 +11,16 @@ public class GameUI : MonoBehaviour
     public TextMeshProUGUI p2Score;
 
     public TextMeshProUGUI winnerNickname;
+    public Button menuButton;
 
     public Animator animator;
-
     public void SetPlayerName(int index, string name)
     {
         if (index == 0)
         {
             p1Name.text = name;
         }
-        else
+        if (index == 1)
         {
             p2Name.text = name;
         }
@@ -32,15 +32,30 @@ public class GameUI : MonoBehaviour
         {
             p1Score.text = "" + score;
         }
-        else
+        if (index == 1)
         {
             p2Score.text = "" + score;
         }
     }
 
+    public void CountDown()
+    {
+        animator.Play("Countdown");
+    }
+
     public void ShowWinnerUI(string winner)
     {
-        winnerNickname.text = winner;
+        winnerNickname.text = $"{winner} won!";
         animator.Play("Winner");
     }
+
+    public void ResetUI()
+    {
+        animator.Play("Default");
+    }
 }
+
+// TODO:
+// 1. Reset Spectator UI when the match finishes
+// 2. Fix issue when the match finish and users don't see the main menu UI
+// 3. Add persistent Leaderboard

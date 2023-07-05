@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 127b8670eb4992d4aab71c13ad98720d
+guid: 22e15f15c499c0843b896c7131a79af3
 TrueTypeFontImporter:
   externalObjects: {}
   serializedVersion: 4
@@ -9,7 +9,7 @@ TrueTypeFontImporter:
   characterPadding: 1
   includeFontData: 1
   fontNames:
-  - Tilt Warp
+  - Nunito
   fallbackFontReferences: []
   customCharacters: 
   fontRenderingMode: 0
